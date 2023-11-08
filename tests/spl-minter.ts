@@ -1,7 +1,6 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { SplMinter } from "../target/types/spl_minter";
-import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { assert } from "chai";
 import {
   createMint,
@@ -18,17 +17,20 @@ describe("spl-minter", () => {
 
   const program = anchor.workspace.SplMinter as Program<SplMinter>;
   const provider = anchor.AnchorProvider.local();
-  // const payer = (provider.wallet as NodeWallet).payer;
+  const payer = (provider.wallet as NodeWallet).payer;
+  const user = new anchor.web3.Keypair();
 
   // Metaplex Constants
   const METADATA_SEED = "metadata";
-  const TOKEN_METADATA_PROGRAM_ID = new anchor.web3.PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
+  const TOKEN_METADATA_PROGRAM_ID = new anchor.web3.PublicKey(
+    "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+  );
 
   // Constants from our program
   const MINT_SEED = "mint";
 
   // Data for our tests
-  let payer = provider.wallet.publicKey;
+  // let payer = provider.wallet.publicKey;
   const metadata = {
     name: "Just a Test Token",
     symbol: "TEST",
@@ -49,7 +51,7 @@ describe("spl-minter", () => {
     ],
     TOKEN_METADATA_PROGRAM_ID
   );
-  
+
   // Test init token
   it("initialize", async () => {
     const info = await provider.connection.getAccountInfo(mint);
@@ -57,51 +59,51 @@ describe("spl-minter", () => {
       return; // Do not attempt to initialize if already initialized
     }
     console.log("  Mint not found. Attempting to initialize.");
-   
+
     const context = {
       metadata: metadataAddress,
       mint,
-      payer,
+      payer: provider.wallet.publicKey,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       systemProgram: anchor.web3.SystemProgram.programId,
       tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
       tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
-      };
-  
-      const txHash = await program.methods
-        .initToken(metadata)
-        .accounts(context)
-        .rpc();
-  
-      await provider.connection.confirmTransaction(txHash, 'finalized');
-      const newInfo = await provider.connection.getAccountInfo(mint);
-      assert(newInfo, "  Mint should be initialized.");
+    };
+
+    const txHash = await program.methods
+      .initToken(metadata)
+      .accounts(context)
+      .rpc();
+
+    await provider.connection.confirmTransaction(txHash, "finalized");
+    const newInfo = await provider.connection.getAccountInfo(mint);
+    assert(newInfo, "  Mint should be initialized.");
   });
 
   // Test mint tokens
   it("mint tokens", async () => {
-
     const destination = await anchor.utils.token.associatedAddress({
       mint: mint,
       owner: provider.wallet.publicKey,
-    });  
-
+    });
     console.log(`Destination is: ${destination}`);
-
     let initialBalance: number;
     try {
-      const balance = (await provider.connection.getTokenAccountBalance(destination))
+      const balance = await provider.connection.getTokenAccountBalance(
+        destination
+      );
       initialBalance = balance.value.uiAmount;
     } catch {
       // Token account not yet initiated has 0 balance
       initialBalance = 0;
-    } 
+    }
 
     console.log(`The amount of tokens minted to 'fromAta': ${initialBalance}`);
     const context = {
       mint,
       destination: destination,
-      payer,
+      owner: provider.wallet.publicKey,
+      payer: provider.wallet.publicKey,
       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
       systemProgram: anchor.web3.SystemProgram.programId,
       tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
@@ -112,11 +114,14 @@ describe("spl-minter", () => {
       .mintTokens(new anchor.BN(mintAmount * 10 ** metadata.decimals))
       .accounts(context)
       .rpc();
-    
-    
+
     await provider.connection.confirmTransaction(txHash);
-    const postBal = await provider.connection.getTokenAccountBalance(destination);
-    console.log(`The amount of tokens minted to 'fromAta': ${postBal.value.uiAmount}`);
+    const postBal = await provider.connection.getTokenAccountBalance(
+      destination
+    );
+    console.log(
+      `The amount of tokens minted to 'fromAta': ${postBal.value.uiAmount}`
+    );
 
     const postBalance = (
       await provider.connection.getTokenAccountBalance(destination)
@@ -126,7 +131,6 @@ describe("spl-minter", () => {
       postBalance,
       "Post balance should equal initial plus mint amount"
     );
-    
 
     console.log("The node wallet pub key is: ", provider.wallet.publicKey);
     let res = await getMint(provider.connection, mint);
@@ -135,7 +139,35 @@ describe("spl-minter", () => {
     console.log(`The tokens freeze authority: ${res.freezeAuthority}`);
     console.log(`The tokens address ${res.address}`);
     console.log(`The program Id is: ${program.programId}`);
+  });
+  it("Should allow for mint to another ata", async function () {
+    await provider.connection.requestAirdrop(user.publicKey, 10 * 1000000000);
+    console.log(`The provider keys ${provider.wallet.publicKey.toBase58()}`);
+    const destination = await anchor.utils.token.associatedAddress({
+      mint: mint,
+      owner: user.publicKey,
+    });
+    const context = {
+      mint,
+      destination: destination,
+      owner: user.publicKey,
+      payer: payer.publicKey,
+      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      systemProgram: anchor.web3.SystemProgram.programId,
+      tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
+      associatedTokenProgram: anchor.utils.token.ASSOCIATED_PROGRAM_ID,
+    };
+    const txHash = await program.methods
+      .mintTokens(new anchor.BN(mintAmount * 10 ** metadata.decimals))
+      .accounts(context)
+      .signers([user])
+      .rpc();
 
-
+    const postBal = await provider.connection.getTokenAccountBalance(
+      destination
+    );
+    console.log(
+      `The amount of tokens minted to 'fromAta': ${postBal.value.uiAmount}`
+    );
   });
 });
