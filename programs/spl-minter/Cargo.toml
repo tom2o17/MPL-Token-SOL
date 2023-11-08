@@ -1,0 +1,23 @@
+[package]
+name = "spl-minter"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "spl_minter"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+
+[dependencies]
+anchor-lang = {version="0.28.0", features = ["init-if-needed"]}
+anchor-spl = "0.28.0"
+solana-program="1.16.8"
+spl-token={version="4.0.0", features = [ "no-entrypoint" ]}
+mpl-token-metadata = {version="1.9.0", features = [ "no-entrypoint" ]}
